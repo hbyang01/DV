@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sexual Partners Distribution — Interactive Marimekko Dashboard</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600&family=Playfair+Display:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --bg:#faf8f5;--bg2:#f0ede8;--fg:#1a1816;--fg2:#5c5650;--fg3:#8a847c;
+  --chip-active:#1a1816;--chip-inactive:#e8e4de;
+  --chip-text-active:#faf8f5;--chip-text-inactive:#5c5650;
+}
+body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--fg);min-height:100vh}
+.container{max-width:1100px;margin:0 auto;padding:32px 24px 48px}
+header{margin-bottom:36px}
+header h1{font-family:'Playfair Display',serif;font-weight:700;font-size:28px;line-height:1.2;letter-spacing:-0.5px;margin-bottom:8px}
+header p{font-size:14px;color:var(--fg2);line-height:1.6;max-width:720px}
+header .subtitle{font-size:13px;color:var(--fg3);margin-top:4px;font-style:italic}
+
+.controls{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-bottom:28px;padding:16px 20px;background:var(--bg2);border-radius:12px}
+.controls-label{font-size:12px;font-weight:500;text-transform:uppercase;letter-spacing:1.2px;color:var(--fg3);margin-right:4px}
+.chip{display:inline-flex;align-items:center;gap:6px;padding:7px 16px;border-radius:20px;font-size:13px;font-weight:500;cursor:pointer;transition:all .25s;user-select:none;background:var(--chip-inactive);color:var(--chip-text-inactive);border:1.5px solid transparent}
+.chip:hover{border-color:#ccc}
+.chip.active{background:var(--chip-active);color:var(--chip-text-active);border-color:var(--chip-active)}
+.chip .num{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;font-size:10px;font-weight:600;background:rgba(255,255,255,.15)}
+.chip:not(.active) .num{background:rgba(0,0,0,.08)}
+.hint{font-size:12px;color:var(--fg3);margin-left:auto}
+
+.chart-wrapper{position:relative;background:#fff;border-radius:16px;padding:24px 24px 20px;border:1px solid #e8e4de}
+.chart-title{font-family:'Playfair Display',serif;font-size:16px;font-weight:600;margin-bottom:4px}
+.chart-desc{font-size:12px;color:var(--fg3);margin-bottom:16px}
+.dim-badges{display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap}
+.dim-badge{font-size:11px;padding:3px 10px;border-radius:12px;background:#f0ede8;color:#5c5650;font-weight:500}
+#marimekko{width:100%;overflow-x:auto}
+
+.legend{display:flex;flex-wrap:wrap;align-items:center;gap:4px 12px;margin-top:14px;padding-top:12px;border-top:1px solid #eee}
+.legend-title{font-size:11px;font-weight:500;color:var(--fg3);margin-right:4px;text-transform:uppercase;letter-spacing:.8px}
+.legend-item{display:flex;align-items:center;gap:4px;font-size:12px;color:var(--fg2)}
+.legend-swatch{width:14px;height:14px;border-radius:3px;flex-shrink:0}
+
+.tooltip{position:fixed;pointer-events:none;opacity:0;transition:opacity .15s;background:#1a1816;color:#fff;padding:10px 14px;border-radius:8px;font-size:12px;line-height:1.5;z-index:999;max-width:260px;box-shadow:0 4px 20px rgba(0,0,0,.2)}
+.tooltip .tt-title{font-weight:600;margin-bottom:3px;font-size:13px}
+.tooltip .tt-row{display:flex;justify-content:space-between;gap:16px}
+.tooltip .tt-label{color:#aaa}
+.tooltip .tt-val{font-weight:500}
+.tooltip .tt-bar{height:3px;border-radius:2px;margin-top:4px;background:rgba(255,255,255,.15)}
+.tooltip .tt-bar-fill{height:100%;border-radius:2px;background:#c4553a}
+
+.y-axis text{font-family:'DM Sans',sans-serif;font-size:11px;fill:#8a847c}
+.y-axis line,.y-axis path{stroke:#e8e4de}
+
+.footer-note{margin-top:20px;font-size:11px;color:var(--fg3);line-height:1.6;padding:12px 16px;background:var(--bg2);border-radius:8px}
+.footer-note strong{color:var(--fg2);font-weight:500}
+
+@media(max-width:600px){.container{padding:20px 12px 32px}header h1{font-size:22px}.controls{gap:6px;padding:12px}.chip{padding:5px 12px;font-size:12px}}
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <h1>How Demographics Shape Sexual Partner Patterns</h1>
+    <p>A Marimekko chart exploring the distribution of past-year sexual partners across gender, sexual orientation, and marital status. Column widths encode group size; color intensity encodes partner count.</p>
+    <p class="subtitle">Toggle dimensions below to progressively disaggregate the population — observe how sub-group patterns emerge.</p>
+  </header>
+  <div class="controls">
+    <span class="controls-label">Split by</span>
+    <div class="chip active" data-dim="gender" onclick="toggleDim(this)"><span class="num">1</span> Gender</div>
+    <div class="chip" data-dim="orientation" onclick="toggleDim(this)"><span class="num">-</span> Orientation</div>
+    <div class="chip" data-dim="marital" onclick="toggleDim(this)"><span class="num">-</span> Marital status</div>
+    <span class="hint">Click to add / remove dimensions</span>
+  </div>
+  <div class="chart-wrapper">
+    <div class="chart-title">Past-year sexual partner distribution</div>
+    <div class="chart-desc">Each column = a sub-group. Width ∝ sample size. Hover for details.</div>
+    <div class="dim-badges" id="dimBadges"></div>
+    <div id="marimekko"></div>
+    <div class="legend" id="legend"></div>
+  </div>
+  <div class="footer-note">
+    <strong>Reading this chart:</strong> Each column represents a demographic sub-group. The column width is proportional to the number of survey respondents in that group. Within each column, colors from light to dark represent increasing numbers of sexual partners in the past year (0 → 11+). This Marimekko layout lets you compare both the <em>composition</em> (color distribution) and the <em>prevalence</em> (column width) simultaneously.
+  </div>
+</div>
+<div class="tooltip" id="tooltip"></div>
+
+<script>
+const RAW=[{"gender":"Female","orientation":"Bisexual","marital":"Married","partners":"0","count":2},{"gender":"Female","orientation":"Bisexual","marital":"Married","partners":"1","count":14},{"gender":"Female","orientation":"Bisexual","marital":"Married","partners":"3","count":1},{"gender":"Female","orientation":"Bisexual","marital":"Unmarried","partners":"0","count":11},{"gender":"Female","orientation":"Bisexual","marital":"Unmarried","partners":"1","count":26},{"gender":"Female","orientation":"Bisexual","marital":"Unmarried","partners":"2","count":9},{"gender":"Female","orientation":"Bisexual","marital":"Unmarried","partners":"3","count":1},{"gender":"Female","orientation":"Bisexual","marital":"Unmarried","partners":"5-10","count":5},{"gender":"Female","orientation":"Bisexual","marital":"Unmarried","partners":"11+","count":1},{"gender":"Female","orientation":"Gay/Lesbian","marital":"Married","partners":"0","count":1},{"gender":"Female","orientation":"Gay/Lesbian","marital":"Married","partners":"1","count":10},{"gender":"Female","orientation":"Gay/Lesbian","marital":"Married","partners":"3","count":1},{"gender":"Female","orientation":"Gay/Lesbian","marital":"Unmarried","partners":"0","count":4},{"gender":"Female","orientation":"Gay/Lesbian","marital":"Unmarried","partners":"1","count":6},{"gender":"Female","orientation":"Gay/Lesbian","marital":"Unmarried","partners":"2","count":1},{"gender":"Female","orientation":"Gay/Lesbian","marital":"Unmarried","partners":"3","count":1},{"gender":"Female","orientation":"Straight","marital":"Married","partners":"0","count":40},{"gender":"Female","orientation":"Straight","marital":"Married","partners":"1","count":392},{"gender":"Female","orientation":"Straight","marital":"Married","partners":"2","count":6},{"gender":"Female","orientation":"Straight","marital":"Married","partners":"3","count":3},{"gender":"Female","orientation":"Straight","marital":"Married","partners":"4","count":4},{"gender":"Female","orientation":"Straight","marital":"Married","partners":"11+","count":4},{"gender":"Female","orientation":"Straight","marital":"Unmarried","partners":"0","count":316},{"gender":"Female","orientation":"Straight","marital":"Unmarried","partners":"1","count":331},{"gender":"Female","orientation":"Straight","marital":"Unmarried","partners":"2","count":41},{"gender":"Female","orientation":"Straight","marital":"Unmarried","partners":"3","count":10},{"gender":"Female","orientation":"Straight","marital":"Unmarried","partners":"4","count":9},{"gender":"Female","orientation":"Straight","marital":"Unmarried","partners":"5-10","count":14},{"gender":"Female","orientation":"Straight","marital":"Unmarried","partners":"11+","count":1},{"gender":"Male","orientation":"Bisexual","marital":"Married","partners":"1","count":6},{"gender":"Male","orientation":"Bisexual","marital":"Married","partners":"2","count":2},{"gender":"Male","orientation":"Bisexual","marital":"Unmarried","partners":"0","count":11},{"gender":"Male","orientation":"Bisexual","marital":"Unmarried","partners":"1","count":8},{"gender":"Male","orientation":"Bisexual","marital":"Unmarried","partners":"2","count":2},{"gender":"Male","orientation":"Bisexual","marital":"Unmarried","partners":"3","count":6},{"gender":"Male","orientation":"Bisexual","marital":"Unmarried","partners":"4","count":3},{"gender":"Male","orientation":"Bisexual","marital":"Unmarried","partners":"5-10","count":3},{"gender":"Male","orientation":"Gay/Lesbian","marital":"Married","partners":"1","count":6},{"gender":"Male","orientation":"Gay/Lesbian","marital":"Unmarried","partners":"0","count":3},{"gender":"Male","orientation":"Gay/Lesbian","marital":"Unmarried","partners":"1","count":12},{"gender":"Male","orientation":"Gay/Lesbian","marital":"Unmarried","partners":"2","count":2},{"gender":"Male","orientation":"Gay/Lesbian","marital":"Unmarried","partners":"3","count":4},{"gender":"Male","orientation":"Gay/Lesbian","marital":"Unmarried","partners":"4","count":1},{"gender":"Male","orientation":"Gay/Lesbian","marital":"Unmarried","partners":"5-10","count":5},{"gender":"Male","orientation":"Straight","marital":"Married","partners":"0","count":89},{"gender":"Male","orientation":"Straight","marital":"Married","partners":"1","count":791},{"gender":"Male","orientation":"Straight","marital":"Married","partners":"2","count":21},{"gender":"Male","orientation":"Straight","marital":"Married","partners":"3","count":9},{"gender":"Male","orientation":"Straight","marital":"Married","partners":"4","count":3},{"gender":"Male","orientation":"Straight","marital":"Married","partners":"5-10","count":3},{"gender":"Male","orientation":"Straight","marital":"Married","partners":"11+","count":3},{"gender":"Male","orientation":"Straight","marital":"Unmarried","partners":"0","count":298},{"gender":"Male","orientation":"Straight","marital":"Unmarried","partners":"1","count":475},{"gender":"Male","orientation":"Straight","marital":"Unmarried","partners":"2","count":116},{"gender":"Male","orientation":"Straight","marital":"Unmarried","partners":"3","count":75},{"gender":"Male","orientation":"Straight","marital":"Unmarried","partners":"4","count":60},{"gender":"Male","orientation":"Straight","marital":"Unmarried","partners":"5-10","count":64},{"gender":"Male","orientation":"Straight","marital":"Unmarried","partners":"11+","count":31}];
+
+const PARTNER_ORDER=['0','1','2','3','4','5-10','11+'];
+const PARTNER_COLORS=['#f2ebe4','#dbc9b8','#c4a88d','#ab8665','#8e6545','#70462a','#4e2a14'];
+const DIM_LABELS={gender:{Male:'Male',Female:'Female'},orientation:{Straight:'Straight','Gay/Lesbian':'Gay/Lesbian',Bisexual:'Bisexual'},marital:{Married:'Married',Unmarried:'Unmarried'}};
+const DIM_NAMES={gender:'Gender',orientation:'Orientation',marital:'Marital status'};
+const DIM_ORDER={gender:['Male','Female'],orientation:['Straight','Gay/Lesbian','Bisexual'],marital:['Married','Unmarried']};
+
+let activeDims=['gender'];
+const tooltip=document.getElementById('tooltip');
+
+function toggleDim(el){
+  const dim=el.dataset.dim;
+  if(activeDims.includes(dim)){
+    if(activeDims.length===1)return;
+    activeDims=activeDims.filter(d=>d!==dim);
+    el.classList.remove('active');
+  }else{
+    activeDims.push(dim);
+    el.classList.add('active');
+  }
+  updateChipNumbers();
+  render();
+}
+
+function updateChipNumbers(){
+  document.querySelectorAll('.chip').forEach(c=>{
+    const idx=activeDims.indexOf(c.dataset.dim);
+    c.querySelector('.num').textContent=idx>=0?idx+1:'-';
+  });
+}
+
+function computeGroups(dims){
+  let combos=[[]];
+  for(const dim of dims){
+    const next=[];
+    for(const combo of combos)for(const val of DIM_ORDER[dim])next.push([...combo,val]);
+    combos=next;
+  }
+  return combos.map(combo=>{
+    const filtered=RAW.filter(row=>dims.every((d,i)=>row[d]===combo[i]));
+    const total=filtered.reduce((s,r)=>s+r.count,0);
+    if(!total)return null;
+    const pc={};PARTNER_ORDER.forEach(p=>pc[p]=0);
+    filtered.forEach(r=>{pc[r.partners]+=r.count;});
+    const segs=PARTNER_ORDER.map(p=>({partners:p,count:pc[p],pct:pc[p]/total})).filter(s=>s.count>0);
+    let cy=0;segs.forEach(s=>{s.y0=cy;s.y1=cy+s.pct;cy=s.y1;});
+    const dv={};dims.forEach((d,i)=>dv[d]=combo[i]);
+    return{combo,dimValues:dv,total,segments:segs,label:combo.map((v,i)=>DIM_LABELS[dims[i]][v]||v).join(', ')};
+  }).filter(Boolean);
+}
+
+function render(){
+  const dims=activeDims;
+  const groups=computeGroups(dims);
+  const ct=document.getElementById('marimekko');
+  ct.innerHTML='';
+  document.getElementById('dimBadges').innerHTML=dims.map(d=>`<span class="dim-badge">${DIM_NAMES[d]}</span>`).join('');
+
+  const grandTotal=groups.reduce((s,g)=>s+g.total,0);
+  const numGroups=groups.length;
+  const fullWidth=Math.max(ct.clientWidth||800,500);
+
+  /* Decide layout strategy:
+     1 dim  → simple bars, generous width
+     2 dims → facet by dim[0], bars by dim[1] inside each facet
+     3 dims → facet by dim[0], sub-facet by dim[1], bars by dim[2]
+  */
+  const nDims=dims.length;
+
+  // Adaptive bottom margin based on label needs
+  const margin={top:16,right:20,left:48,
+    bottom: nDims===1?70 : nDims===2?100 : 120
+  };
+  const chartH=360;
+  const height=chartH+margin.top+margin.bottom;
+  const width=fullWidth-margin.left-margin.right;
+
+  const svg=d3.select(ct).append('svg').attr('width',fullWidth).attr('height',height);
+  const g=svg.append('g').attr('transform',`translate(${margin.left},${margin.top})`);
+
+  // Y axis
+  const yScale=d3.scaleLinear().domain([0,1]).range([chartH,0]);
+  const yG=g.append('g').attr('class','y-axis').call(d3.axisLeft(yScale).ticks(5).tickFormat(d3.format('.0%')).tickSize(-width));
+  yG.select('.domain').remove();
+  yG.selectAll('.tick line').attr('stroke-dasharray','2,3').attr('opacity',.35);
+
+  if(nDims===1){
+    layoutSimple(g,groups,width,chartH,yScale,grandTotal,dims);
+  }else if(nDims===2){
+    layoutTwoLevel(g,groups,dims,width,chartH,yScale,grandTotal);
+  }else{
+    layoutThreeLevel(g,groups,dims,width,chartH,yScale,grandTotal);
+  }
+  buildLegend();
+}
+
+/* ---- 1 dimension: simple wide bars ---- */
+function layoutSimple(g,groups,W,H,yScale,GT,dims){
+  const gap=20;
+  const totalGap=gap*(groups.length-1);
+  const usable=W-totalGap;
+  let x=0;
+  groups.forEach(gr=>{
+    gr.barW=Math.max((gr.total/GT)*usable,30);
+    gr.barX=x;x+=gr.barW+gap;
+  });
+  const sc=W/(x-gap);
+  groups.forEach(gr=>{gr.barX*=sc;gr.barW*=sc;});
+  groups.forEach(gr=>{
+    drawBar(g,gr,yScale,GT);
+    const cx=gr.barX+gr.barW/2;
+    const lbl=abbreviate(gr.label,gr.barW);
+    g.append('text').attr('x',cx).attr('y',H+18).attr('text-anchor','middle')
+      .style('font-family','DM Sans').style('font-size','13px').style('font-weight','500').attr('fill','#1a1816')
+      .text(lbl);
+    g.append('text').attr('x',cx).attr('y',H+32).attr('text-anchor','middle')
+      .style('font-family','DM Sans').style('font-size','10px').attr('fill','#8a847c')
+      .text(`${gr.total} (${(gr.total/GT*100).toFixed(1)}%)`);
+  });
+}
+
+/* ---- 2 dimensions: facet by dim[0], bars by dim[1] ---- */
+function layoutTwoLevel(g,groups,dims,W,H,yScale,GT){
+  const d0=dims[0], d1=dims[1];
+  const facetVals=DIM_ORDER[d0];
+  const facets=facetVals.map(v=>{
+    const fg=groups.filter(gr=>gr.dimValues[d0]===v);
+    return{key:v,label:DIM_LABELS[d0][v],groups:fg,total:fg.reduce((s,x)=>s+x.total,0)};
+  }).filter(f=>f.total>0);
+
+  const facetGap=36;
+  const innerGap=6;
+  assignFacetPositions(facets,W,facetGap,innerGap,GT);
+
+  facets.forEach(f=>{
+    // Draw bars
+    f.groups.forEach(gr=>{
+      drawBar(g,gr,yScale,GT);
+      const cx=gr.barX+gr.barW/2;
+      // Inner label: dim[1] value
+      const lbl=DIM_LABELS[d1][gr.dimValues[d1]]||gr.dimValues[d1];
+      const abbr=abbreviate(lbl,gr.barW);
+      g.append('text').attr('x',cx).attr('y',H+16).attr('text-anchor','middle')
+        .style('font-family','DM Sans').style('font-size',gr.barW<40?'9px':'11px').style('font-weight','500').attr('fill','#1a1816')
+        .text(abbr);
+      if(gr.barW>28)
+        g.append('text').attr('x',cx).attr('y',H+28).attr('text-anchor','middle')
+          .style('font-family','DM Sans').style('font-size','9px').attr('fill','#b0aaa2')
+          .text(`${gr.total}`);
+    });
+    // Facet bracket
+    drawBracket(g,f,H,48,GT);
+  });
+}
+
+/* ---- 3 dimensions: facet by dim[0], sub-facet by dim[1], bars by dim[2] ---- */
+function layoutThreeLevel(g,groups,dims,W,H,yScale,GT){
+  const d0=dims[0],d1=dims[1],d2=dims[2];
+
+  // Build super-facets (d0) containing sub-facets (d1) containing bars (d2)
+  const superFacets=DIM_ORDER[d0].map(v0=>{
+    const subset=groups.filter(gr=>gr.dimValues[d0]===v0);
+    if(!subset.length)return null;
+    const subFacets=DIM_ORDER[d1].map(v1=>{
+      const sub=subset.filter(gr=>gr.dimValues[d1]===v1);
+      if(!sub.length)return null;
+      return{key:v1,label:DIM_LABELS[d1][v1],groups:sub,total:sub.reduce((s,x)=>s+x.total,0)};
+    }).filter(Boolean);
+    return{key:v0,label:DIM_LABELS[d0][v0],subFacets,total:subset.reduce((s,x)=>s+x.total,0)};
+  }).filter(Boolean);
+
+  const superGap=40;
+  const subGap=14;
+  const barGap=3;
+
+  // Allocate width proportional to total count
+  const totalSuperGap=superGap*(superFacets.length-1);
+  const usableW=W-totalSuperGap;
+  superFacets.forEach(sf=>{sf.allocW=Math.max((sf.total/GT)*usableW, sf.subFacets.length*40);});
+  const sumAlloc=superFacets.reduce((s,f)=>s+f.allocW,0);
+  superFacets.forEach(sf=>{sf.allocW=(sf.allocW/sumAlloc)*usableW;});
+
+  let sx=0;
+  superFacets.forEach(sf=>{
+    sf.startX=sx;
+    // Distribute sub-facets within super-facet
+    const subGapTotal=subGap*(sf.subFacets.length-1);
+    const subUsable=sf.allocW-subGapTotal;
+    sf.subFacets.forEach(sub=>{sub.allocW=Math.max((sub.total/sf.total)*subUsable, sub.groups.length*16);});
+    const subSum=sf.subFacets.reduce((s,f)=>s+f.allocW,0);
+    sf.subFacets.forEach(sub=>{sub.allocW=(sub.allocW/subSum)*subUsable;});
+
+    let subX=0;
+    sf.subFacets.forEach(sub=>{
+      sub.startX=sf.startX+subX;
+      // Distribute bars
+      const bGapTotal=barGap*(sub.groups.length-1);
+      const bUsable=sub.allocW-bGapTotal;
+      let bx=0;
+      sub.groups.forEach(gr=>{
+        gr.barW=Math.max((gr.total/sub.total)*bUsable,10);
+        gr.barX=sub.startX+bx;
+        bx+=gr.barW+barGap;
+      });
+      // Scale to fit
+      const actual=bx-barGap;
+      if(actual>0){
+        const sc=sub.allocW/actual;
+        sub.groups.forEach(gr=>{
+          gr.barX=sub.startX+(gr.barX-sub.startX)*sc;
+          gr.barW*=sc;
+        });
+      }
+      subX+=sub.allocW+subGap;
+    });
+    sx+=sf.allocW+superGap;
+  });
+
+  // Draw everything
+  superFacets.forEach(sf=>{
+    sf.subFacets.forEach(sub=>{
+      sub.groups.forEach(gr=>{
+        drawBar(g,gr,yScale,GT);
+        const cx=gr.barX+gr.barW/2;
+        // Bar label: dim[2] value
+        const lbl=DIM_LABELS[d2][gr.dimValues[d2]]||gr.dimValues[d2];
+        const abbr=abbreviate(lbl,gr.barW);
+        g.append('text').attr('x',cx).attr('y',H+14).attr('text-anchor','middle')
+          .style('font-family','DM Sans').style('font-size',gr.barW<28?'8px':'10px').style('font-weight','500').attr('fill','#5c5650')
+          .text(abbr);
+      });
+
+      // Sub-facet bracket (dim[1])
+      const subCx=sub.startX+sub.allocW/2;
+      const bY=H+28;
+      g.append('line').attr('x1',sub.startX+1).attr('x2',sub.startX+sub.allocW-1)
+        .attr('y1',bY).attr('y2',bY).attr('stroke','#d0cbc4').attr('stroke-width',0.8);
+      g.append('line').attr('x1',sub.startX+1).attr('x2',sub.startX+1)
+        .attr('y1',bY-3).attr('y2',bY).attr('stroke','#d0cbc4').attr('stroke-width',0.8);
+      g.append('line').attr('x1',sub.startX+sub.allocW-1).attr('x2',sub.startX+sub.allocW-1)
+        .attr('y1',bY-3).attr('y2',bY).attr('stroke','#d0cbc4').attr('stroke-width',0.8);
+      const subLabel=abbreviate(sub.label, sub.allocW);
+      g.append('text').attr('x',subCx).attr('y',bY+13).attr('text-anchor','middle')
+        .style('font-family','DM Sans').style('font-size','10px').style('font-weight','500').attr('fill','#1a1816')
+        .text(subLabel);
+    });
+
+    // Super-facet bracket (dim[0])
+    const sfCx=sf.startX+sf.allocW/2;
+    const bY2=H+56;
+    g.append('line').attr('x1',sf.startX+1).attr('x2',sf.startX+sf.allocW-1)
+      .attr('y1',bY2).attr('y2',bY2).attr('stroke','#8a847c').attr('stroke-width',1.2);
+    g.append('line').attr('x1',sf.startX+1).attr('x2',sf.startX+1)
+      .attr('y1',bY2-5).attr('y2',bY2).attr('stroke','#8a847c').attr('stroke-width',1.2);
+    g.append('line').attr('x1',sf.startX+sf.allocW-1).attr('x2',sf.startX+sf.allocW-1)
+      .attr('y1',bY2-5).attr('y2',bY2).attr('stroke','#8a847c').attr('stroke-width',1.2);
+    g.append('text').attr('x',sfCx).attr('y',bY2+16).attr('text-anchor','middle')
+      .style('font-family','Playfair Display').style('font-size','13px').style('font-weight','600').attr('fill','#1a1816')
+      .text(sf.label);
+    g.append('text').attr('x',sfCx).attr('y',bY2+29).attr('text-anchor','middle')
+      .style('font-family','DM Sans').style('font-size','9px').attr('fill','#b0aaa2')
+      .text(`${sf.total} (${(sf.total/GT*100).toFixed(1)}%)`);
+  });
+}
+
+/* ---- Shared helpers ---- */
+function assignFacetPositions(facets,W,facetGap,innerGap,GT){
+  const totalFG=facetGap*(facets.length-1);
+  const usable=W-totalFG;
+  facets.forEach(f=>{f.allocW=Math.max((f.total/GT)*usable,f.groups.length*24);});
+  const sum=facets.reduce((s,f)=>s+f.allocW,0);
+  facets.forEach(f=>{f.allocW=(f.allocW/sum)*usable;});
+  let fx=0;
+  facets.forEach(f=>{
+    f.startX=fx;
+    const nBars=f.groups.length;
+    const ig=innerGap*(nBars-1);
+    const iu=f.allocW-ig;
+    let bx=0;
+    f.groups.forEach(gr=>{
+      gr.barW=Math.max((gr.total/f.total)*iu,14);
+      gr.barX=f.startX+bx;
+      bx+=gr.barW+innerGap;
+    });
+    const actual=bx-innerGap;
+    if(actual>0){const sc=f.allocW/actual;f.groups.forEach(gr=>{gr.barX=f.startX+(gr.barX-f.startX)*sc;gr.barW*=sc;});}
+    fx+=f.allocW+facetGap;
+  });
+}
+
+function drawBracket(g,f,H,offsetY,GT){
+  const cx=f.startX+f.allocW/2;
+  const bY=H+offsetY;
+  g.append('line').attr('x1',f.startX+1).attr('x2',f.startX+f.allocW-1)
+    .attr('y1',bY).attr('y2',bY).attr('stroke','#8a847c').attr('stroke-width',1.2);
+  g.append('line').attr('x1',f.startX+1).attr('x2',f.startX+1)
+    .attr('y1',bY-5).attr('y2',bY).attr('stroke','#8a847c').attr('stroke-width',1.2);
+  g.append('line').attr('x1',f.startX+f.allocW-1).attr('x2',f.startX+f.allocW-1)
+    .attr('y1',bY-5).attr('y2',bY).attr('stroke','#8a847c').attr('stroke-width',1.2);
+  g.append('text').attr('x',cx).attr('y',bY+16).attr('text-anchor','middle')
+    .style('font-family','Playfair Display').style('font-size','13px').style('font-weight','600').attr('fill','#1a1816')
+    .text(f.label);
+  g.append('text').attr('x',cx).attr('y',bY+29).attr('text-anchor','middle')
+    .style('font-family','DM Sans').style('font-size','9px').attr('fill','#b0aaa2')
+    .text(`${f.total} (${(f.total/GT*100).toFixed(1)}%)`);
+}
+
+function drawBar(g,gr,yScale,GT){
+  gr.segments.forEach(seg=>{
+    const ci=PARTNER_ORDER.indexOf(seg.partners);
+    const rH=Math.max(yScale(seg.y0)-yScale(seg.y1),0.5);
+    const rect=g.append('rect')
+      .attr('x',gr.barX).attr('y',yScale(seg.y1))
+      .attr('width',Math.max(gr.barW,2)).attr('height',rH)
+      .attr('fill',PARTNER_COLORS[ci])
+      .attr('stroke','#fff').attr('stroke-width',gr.barW>20?0.8:0.4)
+      .attr('rx',gr.barW>15?1.5:0.5)
+      .style('cursor','pointer');
+    rect.on('mouseover',function(event){
+      d3.select(this).attr('stroke','#1a1816').attr('stroke-width',2);
+      const pct=(seg.pct*100).toFixed(1);
+      tooltip.innerHTML=`
+        <div class="tt-title">${gr.label}</div>
+        <div class="tt-row"><span class="tt-label">Partners</span><span class="tt-val">${seg.partners}</span></div>
+        <div class="tt-row"><span class="tt-label">Proportion</span><span class="tt-val">${pct}%</span></div>
+        <div class="tt-row"><span class="tt-label">Count</span><span class="tt-val">${seg.count} / ${gr.total}</span></div>
+        <div class="tt-row"><span class="tt-label">Group share</span><span class="tt-val">${(gr.total/GT*100).toFixed(1)}%</span></div>
+        <div class="tt-bar"><div class="tt-bar-fill" style="width:${pct}%"></div></div>`;
+      tooltip.style.opacity=1;
+    })
+    .on('mousemove',function(event){
+      tooltip.style.left=Math.min(event.clientX+12,window.innerWidth-270)+'px';
+      tooltip.style.top=(event.clientY-10)+'px';
+    })
+    .on('mouseout',function(){
+      d3.select(this).attr('stroke','#fff').attr('stroke-width',gr.barW>20?0.8:0.4);
+      tooltip.style.opacity=0;
+    });
+  });
+  // Pct label on top
+  if(gr.barW>22){
+    g.append('text').attr('x',gr.barX+gr.barW/2).attr('y',yScale(1)-4).attr('text-anchor','middle')
+      .style('font-family','DM Sans').style('font-size','9px').attr('fill','#8a847c')
+      .text((gr.total/GT*100).toFixed(1)+'%');
+  }
+}
+
+function abbreviate(text,barW){
+  const always={'Gay/Lesbian':'G/L','Bisexual':'Bi'};
+  if(always[text])text=always[text];
+  if(barW>60)return text;
+  const map={'Married':'Mar.','Unmarried':'Unm.','Straight':'Str.','Male':'M','Female':'F'};
+  if(barW<30) return map[text]||text.slice(0,3);
+  return map[text]||text;
+}
+
+function buildLegend(){
+  const leg=document.getElementById('legend');
+  leg.innerHTML='<span class="legend-title">Partners (past year)</span>';
+  PARTNER_ORDER.forEach((p,i)=>{
+    leg.innerHTML+=`<span class="legend-item"><span class="legend-swatch" style="background:${PARTNER_COLORS[i]}"></span>${p}</span>`;
+  });
+}
+
+window.addEventListener('resize',render);
+updateChipNumbers();
+render();
+</script>
+</body>
+</html>
